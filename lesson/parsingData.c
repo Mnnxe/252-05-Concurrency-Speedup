@@ -12,9 +12,14 @@ void* char_print(void* parameters)
 {
     struct char_print_params* p = (struct char_print_params*) parameters;
     int i;
+    for(i=0;i<((struct char_print_params*) parameters)->count;i++){
+        fputc(((struct char_print_params*) parameters)->ch, stderr);
+    }
+    /*
     for(i = 0; i < p->count; i++){
         fputc(p->ch, stderr);
     }
+    */
     return NULL;
 }
 
@@ -30,6 +35,12 @@ int main(){
     threadArgs2.ch = 'o';
     threadArgs2.count = 20000;
     pthread_create(&threadID2, NULL, &char_print, &threadArgs2);
+
+    /* Make sure the rst thread has nished. */
+    pthread_join (threadID1, NULL);
+    /* Make sure the second thread has nished. */
+    pthread_join (threadID2, NULL);
+    /* Now we can safely return. */
 
     return 0;
 }
