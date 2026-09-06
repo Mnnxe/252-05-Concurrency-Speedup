@@ -49,7 +49,23 @@ void *worker_run(void *arg) {
     WorkerArgs *w = (WorkerArgs *)arg;
 
     /* TODO: compute partial_sum, partial_xor, partial_max for range [start, end). */
-    (void)w;
+    int64_t sum = 0;
+    uint32_t x = 0;
+    uint32_t maxv = 0;
+
+    for (size_t i = w->start; i < w->end; ++i) {
+        uint32_t value = value_for_index(i, w->rounds, w->seed);
+
+        sum += value;
+        x ^= value;
+
+        if (value > maxv) {
+            maxv = value;
+        }
+    }
+    w->partial_sum = sum;
+    w->partial_xor = x;
+    w->partial_max = maxv;
 
     return NULL;
 }
@@ -81,13 +97,53 @@ int run_multi(WorkerArgs *args, int thread_count, uint64_t *sum, uint32_t *x, ui
     }
 
     /* TODO: create one thread per chunk and join all threads. */
+    for (int i = 0; i < thread_count; ++i) {
+        int rc = pthread_create(&threads[i], NULL, worker_run, &args[i]);
+
+        if (rc != 0) {
+            fprintf(stderr, "pthread_create failed: %s\n", strerror(rc));
+            for (int j = 0; j < i; ++j) {
+                pthread_join(threads[j], NULL);
+            }
+
+            free(threads);
+            return -1;
+        }
+    }
+
+    for (int i = 0; i < thread_count; ++i) {
+        int rc = pthread_join(threads[i], NULL);
+
+        if (rc != 0) {
+            fprintf(stderr, "pthread_join failed: %s\n", strerror(rc));
+            free(threads);
+            return -1;
+        }
+    }
+
+    uint64_t total_sum = 0;
+    uint32_t total_xor = 0;
+    uint32_t total_max = 0;
+
+    for (int i = 0; i < thread_count; ++i) {
+        total_sum += args[i].partial_sum;
+        total_xor ^= args[i].partial_xor;
+
+        if (args[i].partial_max > total_max) {
+            total_max = args[i].partial_max;
+        }
+    }
+
+    *sum = total_sum;
+    *x = total_xor;
+    *maxv = total_max;
     free(threads);
-    return -1;
+    return 0;
 }
 
 int main(int argc, char **argv) {
     if (argc != 6) {
-        fprintf(stderr, "usage: %s <mode:single|multi> <threads> <items> <rounds> <seed>\\n", argv[0]);
+        fprintf(stderr, "usage: %s <mode:single|multi> <threads> <items> <rounds> <seed>\n", argv[0]);
         return 2;
     }
 
@@ -101,12 +157,12 @@ int main(int argc, char **argv) {
         parse_positive_int(argv[3], &items) != 0 ||
         parse_positive_int(argv[4], &rounds) != 0 ||
         parse_positive_u32(argv[5], &seed) != 0) {
-        fprintf(stderr, "invalid numeric argument\\n");
+        fprintf(stderr, "invalid numeric argument\n");
         return 2;
     }
 
     if (strcmp(mode, "single") != 0 && strcmp(mode, "multi") != 0) {
-        fprintf(stderr, "mode must be single or multi\\n");
+        fprintf(stderr, "mode must be single or multi\n");
         return 2;
     }
 
@@ -153,12 +209,12 @@ int main(int argc, char **argv) {
     free(jobs);
 
     if (rc != 0) {
-        fprintf(stderr, "TODO: implement thread checksum logic\\n");
+        fprintf(stderr, "TODO: implement thread checksum logic\n");
         return 1;
     }
 
-    printf("result: sum=%" PRIu64 " xor=%" PRIu32 " max=%" PRIu32 "\\n", sum, x, maxv);
-    printf("meta: mode=%s threads=%d items=%d rounds=%d seed=%" PRIu32 "\\n",
+    printf("result: sum=%" PRIu64 " xor=%" PRIu32 " max=%" PRIu32 "\n", sum, x, maxv);
+    printf("meta: mode=%s threads=%d items=%d rounds=%d seed=%" PRIu32 "\n",
            mode, thread_count, items, rounds, seed);
 
     return 0;
